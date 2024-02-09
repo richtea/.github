@@ -52,11 +52,8 @@ runs:
         const path = require('path')
         const fs = require('fs')
 
-        const input_upload_url = core.getInput("upload-url", { required: true });
-        const input_files = core.getInput("files", { required: true });
-
         function parseInputFiles(files) {
-          return files.split(/\r?\n/).reduce<string[]>(
+          return files.split(/\r?\n/).reduce(
             (acc, line) =>
               acc
                 .concat(line.split(","))
@@ -66,12 +63,12 @@ runs:
           );
         };
 
-        function asset(path) {
+        function asset(filepath) {
           return {
-            name: basename(path),
-            mime: mime.getType(path) || "application/octet-stream",
-            size: fs.statSync(path).size,
-            data: fs.readFileSync(path),
+            name: path.basename(filepath),
+            mime: mime.getType(filepath) || "application/octet-stream",
+            size: fs.statSync(filepath).size,
+            data: fs.readFileSync(filepath),
           };
         };
 
@@ -80,14 +77,16 @@ runs:
           const headers = { 'content-type': mime, 'content-length': size };
 
           github.request({
-              method: "POST",
-              url: result.data.upload_url,
-              headers,
-              data,
-              name,
-            });
+            method: "POST",
+            url: upload_url,
+            headers,
+            data,
+            name,
           });
         }
+
+        const input_upload_url = core.getInput("upload-url", { required: true });
+        const input_files = core.getInput("files", { required: true });
 
         try {
             const patterns = parseInputFiles(input_files);
@@ -98,7 +97,7 @@ runs:
               throw new Error("The specified glob doesn't match any files");
             }
 
-            files.map((file) => upload(file));
+            files.map((file) => upload(file, input_upload_url));
         } catch (error) {
             core.setFailed(error.message);
         }
