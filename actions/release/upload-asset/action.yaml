@@ -1,0 +1,104 @@
+# NOTE: Any workflow that uses this action needs content: write permission
+
+name: "Upload release asset"
+
+description: "Uploads a release asset to a release"
+
+inputs:
+  github-token:
+    description: "GitHub token of a user with permission to create a release"
+    required: true
+  upload-url:
+    description: "The URL for uploading assets to the release"
+    required: true
+  files:
+    description: "Newline-delimited list of path globs for asset files to upload"
+    required: false
+
+outputs:
+  id:
+    description: "The release ID"
+    value: ${{ steps.create-release.outputs.id }}
+  html-url:
+    description: "The URL users can navigate to in order to view the release. e.g. `https://github.com/octocat/Hello-World/releases/v1.0.0`"
+    value: ${{ steps.create-release.outputs.html-url }}
+  upload-url:
+    description: >-
+      The URL for uploading assets to the release, which could be used by GitHub Actions for additional uses,
+      for example the [@actions/upload-release-asset](https://www.github.com/actions/upload-release-asset) GitHub Action
+    value: ${{ steps.create-release.outputs.upload-url }}
+runs:
+  using: "composite"
+
+  steps:
+  - uses: actions/setup-node@v4
+    with:
+      node-version: '20.x'
+
+  - name: Install NPM dependencies
+    run: npm install mime
+    shell: bash
+
+  - id: upload-release-asset
+    name: "Upload release asset"
+    uses: "actions/github-script@v7.0.1"
+    env:
+      INPUT_UPLOAD-URL: "${{ inputs.upload-url }}"
+      INPUT_FILES: "${{ inputs.files }}"
+    with:
+      github-token: "${{ inputs.github-token }}"
+      script: |
+        const mime = require('mime')
+        const path = require('path')
+        const fs = require('fs')
+
+        const input_upload_url = core.getInput("upload-url", { required: true });
+        const input_files = core.getInput("files", { required: true });
+
+        function parseInputFiles(files) {
+          return files.split(/\r?\n/).reduce<string[]>(
+            (acc, line) =>
+              acc
+                .concat(line.split(","))
+                .filter((pat) => pat)
+                .map((pat) => pat.trim()),
+            []
+          );
+        };
+
+        function asset(path) {
+          return {
+            name: basename(path),
+            mime: mime.getType(path) || "application/octet-stream",
+            size: fs.statSync(path).size,
+            data: fs.readFileSync(path),
+          };
+        };
+
+        function upload(path, upload_url) {
+          const { name, size, mime, data } = asset(path);
+          const headers = { 'content-type': mime, 'content-length': size };
+
+          github.request({
+              method: "POST",
+              url: result.data.upload_url,
+              headers,
+              data,
+              name,
+            });
+          });
+        }
+
+        try {
+            const patterns = parseInputFiles(input_files);
+            const globber = await glob.create(patterns.join('\n'));
+            const files = await globber.glob();
+
+            if (files.length === 0) {
+              throw new Error("The specified glob doesn't match any files");
+            }
+
+            files.map((file) => upload(file));
+        } catch (error) {
+            core.setFailed(error.message);
+        }
